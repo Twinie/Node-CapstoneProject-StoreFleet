@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, "user name is requires"],
     maxLength: [30, "user name can't exceed 30 characters"],
-    minLength: [2, "name should have atleast 2 charcters"],
+    minLength: [2, "name should have atleast 2 characters"],
   },
   email: {
     type: String,
@@ -45,6 +45,11 @@ const userSchema = new mongoose.Schema({
 
 userSchema.pre("save", async function (next) {
   //  hash user password before saving using bcrypt
+  const user = this;
+  if (user.password) {
+    user.password = await bcrypt.hash(user.password, 12);
+  }
+  next();
 });
 
 // JWT Token
@@ -69,8 +74,7 @@ userSchema.methods.getResetPasswordToken = async function () {
     .digest("hex");
 
   this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
-
-  return resetToken;
+  return { resetToken, resetPasswordExpire: this.resetPasswordExpire };
 };
 
 const UserModel = mongoose.model("User", userSchema);

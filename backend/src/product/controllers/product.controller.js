@@ -11,6 +11,7 @@ import {
   getTotalCountsOfProduct,
   updateProductRepo,
 } from "../model/product.repository.js";
+import { ObjectId } from "mongodb";
 import ProductModel from "../model/product.schema.js";
 
 export const addNewProduct = async (req, res, next) => {
@@ -31,6 +32,40 @@ export const addNewProduct = async (req, res, next) => {
 
 export const getAllProducts = async (req, res, next) => {
   // Implement the functionality for search, filter and pagination this function.
+  try {
+    const page = req.query.page;
+    const keyword = req.query.keyword;
+    const category = req.query.category;
+    let pricegte;
+    let pricelte;
+    let ratinggte;
+    let ratinglte;
+
+    if (req.query.price) {
+      console.log(req.query.price["gte"], req.query.price["lte"]);
+      pricegte = req.query.price["gte"];
+      pricelte = req.query.price["lte"];
+    }
+    if (req.query.rating) {
+      console.log(req.query.rating["gte"]);
+      ratinggte = req.query.rating["gte"];
+      ratinglte = req.query.rating["lte"];
+    }
+
+    const getProducts = await getAllProductsRepo(
+      page,
+      keyword,
+      category,
+      pricegte,
+      pricelte,
+      ratinggte,
+      ratinglte
+    );
+    res.status(201).json({ success: true, getProducts });
+  } catch (error) {
+    console.log(error);
+    return next(new ErrorHandler(400, error));
+  }
 };
 
 export const updateProduct = async (req, res, next) => {
@@ -129,6 +164,7 @@ export const getAllReviewsOfAProduct = async (req, res, next) => {
 export const deleteReview = async (req, res, next) => {
   // Insert the essential code into this controller wherever necessary to resolve issues related to removing reviews and updating product ratings.
   try {
+    const userId = req.user._id;
     const { productId, reviewId } = req.query;
     if (!productId || !reviewId) {
       return next(
@@ -150,17 +186,37 @@ export const deleteReview = async (req, res, next) => {
     if (isReviewExistIndex < 0) {
       return next(new ErrorHandler(400, "review doesn't exist"));
     }
-
     const reviewToBeDeleted = reviews[isReviewExistIndex];
-    reviews.splice(isReviewExistIndex, 1);
+    // console.log(reviewToBeDeleted.user, userId.toString());
 
-    await product.save({ validateBeforeSave: false });
-    res.status(200).json({
-      success: true,
-      msg: "review deleted successfully",
-      deletedReview: reviewToBeDeleted,
-      product,
-    });
+    // only the user who created can delete the review
+    if (reviewToBeDeleted.user === userId.toString()) {
+      let avgRating = 0;
+      reviews.splice(isReviewExistIndex, 1);
+      product.reviews.forEach((review) => {
+        avgRating += review.rating;
+      });
+      let updatedRatingOfProduct = 0;
+      if (!product.reviews.length) {
+        product.rating = updatedRatingOfProduct;
+      } else {
+        updatedRatingOfProduct = avgRating / product.reviews.length;
+        product.rating = updatedRatingOfProduct;
+        // console.log(updatedRatingOfProduct);
+      }
+      await product.save({ validateBeforeSave: false });
+      res.status(200).json({
+        success: true,
+        msg: "review deleted successfully",
+        deletedReview: reviewToBeDeleted,
+        product,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        msg: "Cannot delete the review",
+      });
+    }
   } catch (error) {
     return next(new ErrorHandler(500, error));
   }

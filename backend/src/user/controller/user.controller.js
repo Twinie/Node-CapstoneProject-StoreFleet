@@ -20,10 +20,16 @@ export const createNewUser = async (req, res, next) => {
   const { name, email, password } = req.body;
   try {
     const newUser = await createNewUserRepo(req.body);
-    await sendToken(newUser, res, 200);
+    if (newUser.success) {
+      await sendToken(newUser.user, res, 200);
 
-    // Implement sendWelcomeEmail function to send welcome message
-    await sendWelcomeEmail(newUser);
+      // Implement sendWelcomeEmail function to send welcome message
+      await sendWelcomeEmail(newUser.user);
+    } else {
+      res
+        .status(400)
+        .send({ success: newUser.success, error: newUser.error.msg });
+    }
   } catch (err) {
     //  handle error for duplicate email
     return next(new ErrorHandler(400, err));
@@ -64,10 +70,41 @@ export const logoutUser = async (req, res, next) => {
 
 export const forgetPassword = async (req, res, next) => {
   // Implement feature for forget password
+  const { email } = req.body;
+  const user = await findUserRepo(email);
+  if (user) {
+    const token = await user.getResetPasswordToken();
+    user.resetPasswordToken = token.resetToken;
+    user.resetPasswordExpire = token.resetPasswordExpire;
+    await user.save();
+    await sendPasswordResetEmail(user, token.resetToken);
+    return res
+      .status(200)
+      .send({ success: true, message: "Token for resetting password mailed" });
+  } else {
+    return next(
+      new ErrorHandler(401, "user not found! register yourself now!!")
+    );
+  }
 };
 
 export const resetUserPassword = async (req, res, next) => {
   // Implement feature for reset password
+  const hashToken = req.params.token;
+  const { password, confirmPassword } = req.body;
+  if (password === confirmPassword) {
+    const resetPw = await findUserForPasswordResetRepo(hashToken, password);
+
+    //logout the user after password is changed
+    res.clearCookie("token");
+
+    return res.status(200).send({ success: true, message: "Password changed" });
+  } else {
+    return res.status(400).send({
+      success: false,
+      message: "password and confirmPassword should match",
+    });
+  }
 };
 
 export const getUserDetails = async (req, res, next) => {
@@ -162,4 +199,22 @@ export const deleteUser = async (req, res, next) => {
 
 export const updateUserProfileAndRole = async (req, res, next) => {
   // Write your code here for updating the roles of other users by admin
+  try {
+    const id = req.params.id;
+    const foundUserToModifyRole = await updateUserRoleAndProfileRepo(
+      id,
+      req.body
+    );
+    if (foundUserToModifyRole) {
+      return res
+        .status(200)
+        .json({ success: true, userModified: foundUserToModifyRole });
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, message: "User not found" });
+    }
+  } catch (error) {
+    return next(new ErrorHandler(400, error));
+  }
 };
